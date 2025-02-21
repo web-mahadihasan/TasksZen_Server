@@ -18,11 +18,13 @@ const taskSchema = new mongoose.Schema({
   title: { type: String, required: true, maxlength: 100 },
   description: { type: String, maxlength: 500 },
   category: { type: String, enum: ["To-Do", "In Progress", "Done"], required: true },
-  timestamp: { type: Date, default: Date.now },
+  createDate: { type: Date, default: Date.now },
+  name: { type: String, required: true },
+  email: { type: String, required: true },
 })
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  email: { type: String, required: true },
   photoUrl: { type: String, required: true },
   createAt: { type: Date, default: Date.now },
 })
@@ -63,15 +65,12 @@ app.post("/users", async (req, res) => {
     photoUrl: userInfo.photoUrl,
     createAt: userInfo.createAt,
   })
-// console.log(user)
- 
+
   try {
     const isExist = await Users.findOne({ email: user.email });
-    console.log(isExist)
     if(isExist) {
       return res.send({message: "User alreay exit is database", insertedId: null})
     } 
-    console.log("Else block")
     const newUser = await user.save()
     res.status(201).json({ message: "User created successfully", user: newUser })
 
@@ -81,9 +80,10 @@ app.post("/users", async (req, res) => {
 })
 
 // Get all tasks
-app.get("/tasks", async (req, res) => {
+app.get("/tasks/:email", verifyToken, async (req, res) => {
+  const email = req.params.email 
   try {
-    const tasks = await Task.find()
+    const tasks = await Task.find({email: email})
     res.json(tasks)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -91,11 +91,13 @@ app.get("/tasks", async (req, res) => {
 })
 
 // Create a new task
-app.post("/tasks", async (req, res) => {
+app.post("/tasks", verifyToken, async (req, res) => {
   const task = new Task({
     title: req.body.title,
     description: req.body.description,
     category: req.body.category,
+    name: req.body.name,
+    email: req.body.email
   })
 
   try {
@@ -107,7 +109,7 @@ app.post("/tasks", async (req, res) => {
 })
 
 // Update a task
-app.put("/tasks/:id", async (req, res) => {
+app.put("/tasks/:id", verifyToken, async (req, res) => {
   try {
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
@@ -130,7 +132,7 @@ app.put("/tasks/:id", async (req, res) => {
 })
 
 // Delete a task
-app.delete("/tasks/:id", async (req, res) => {
+app.delete("/tasks/:id", verifyToken, async (req, res) => {
   try {
     const deletedTask = await Task.findByIdAndDelete(req.params.id)
 
