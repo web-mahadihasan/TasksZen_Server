@@ -19,8 +19,10 @@ const taskSchema = new mongoose.Schema({
   description: { type: String, maxlength: 500 },
   category: { type: String, enum: ["To-Do", "In Progress", "Done"], required: true },
   createDate: { type: Date, default: Date.now },
+  deadline: { type: Date, required: true },
+  priorityLevel: { type: String, enum: ["High", "Medium", "Low"], required: true },
   name: { type: String, required: true },
-  email: { type: String, required: true },
+  userEmail: { type: String, required: true },
 })
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -28,7 +30,14 @@ const userSchema = new mongoose.Schema({
   photoUrl: { type: String, required: true },
   createAt: { type: Date, default: Date.now },
 })
+const activitySchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  userEmail: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+})
 
+// connection 
+const Activity = mongoose.model("Activity", activitySchema)
 const Task = mongoose.model("Task", taskSchema)
 const Users = mongoose.model("Users", userSchema)
 
@@ -81,9 +90,11 @@ app.post("/users", async (req, res) => {
 
 // Get all tasks
 app.get("/tasks/:email", verifyToken, async (req, res) => {
-  const email = req.params.email 
+  const email = req.params.email
+  const search = req.query.search
+  console.log(search) 
   try {
-    const tasks = await Task.find({email: email})
+    const tasks = await Task.find({userEmail: email})
     res.json(tasks)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -96,13 +107,21 @@ app.post("/tasks", verifyToken, async (req, res) => {
     title: req.body.title,
     description: req.body.description,
     category: req.body.category,
+    deadline: req.body.deadline,
+    priorityLevel: req.body.priorityLevel,
     name: req.body.name,
-    email: req.body.email
+    userEmail: req.body.userEmail,
   })
-
+  console.log(task)
   try {
     const newTask = await task.save()
-    res.status(201).json(newTask)
+
+    await new Activity({
+      title: `New task '${req.body.title}' was added to ${req.body.category}`,
+      userEmail: req.body.userEmail,
+    }).save()
+
+    res.status(201).json({task: newTask, insertedCount: 1 })
   } catch (error) {
     res.status(400).json({ message: error.message })
   }
@@ -110,6 +129,7 @@ app.post("/tasks", verifyToken, async (req, res) => {
 
 // Update a task
 app.put("/tasks/:id", verifyToken, async (req, res) => {
+  const {userEmail, title} = req.body
   try {
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
@@ -117,6 +137,8 @@ app.put("/tasks/:id", verifyToken, async (req, res) => {
         title: req.body.title,
         description: req.body.description,
         category: req.body.category,
+        deadline: req.body.deadline,
+        priorityLevel: req.body.priorityLevel,
       },
       { new: true },
     )
@@ -125,9 +147,14 @@ app.put("/tasks/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Task not found" })
     }
 
-    res.json(updatedTask)
+    await new Activity({
+      title: `Task '${title}' was updated`,
+      userEmail,
+    }).save()
+
+    return res.json(updatedTask)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    res.status(400).json({ message: error.message });
   }
 })
 
@@ -139,13 +166,39 @@ app.delete("/tasks/:id", verifyToken, async (req, res) => {
     if (!deletedTask) {
       return res.status(404).json({ message: "Task not found" })
     }
+    await new Activity({
+      title: `Task '${deletedTask.title}' was deleted`,
+      userEmail: deletedTask.userEmail,
+    }).save()
 
-    res.json({ message: "Task deleted successfully" })
+    res.json({ message: "Task deleted successfully", deletedCount: 1 })
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
 })
 
+
+// Get activities
+app.get("/activities/:email", async (req, res) => {
+  const email = req.params.email
+  try {
+    const activities = await Activity.find({userEmail: email}).sort("-timestamp").limit(50)
+    res.json(activities)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Log activity
+app.post("/activities", async (req, res) => {
+  const { title, userEmail } = req.body
+  try {
+    const newActivity = await new Activity({ title, userEmail }).save()
+    res.status(201).json(newActivity)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
 
 // Root End point 
 app.get("/", (req, res) => {
@@ -156,4 +209,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`)
 })
-
