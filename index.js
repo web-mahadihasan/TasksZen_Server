@@ -195,16 +195,6 @@ app.get("/activities/:email", verifyToken, async (req, res) => {
   }
 })
 
-// Log activity
-app.post("/activities", verifyToken, async (req, res) => {
-  const { title, userEmail } = req.body
-  try {
-    const newActivity = await new Activity({ title, userEmail }).save()
-    res.status(201).json(newActivity)
-  } catch (error) {
-    res.status(400).json({ message: error.message })
-  }
-})
 
 // Root End point 
 app.get("/", (req, res) => {
