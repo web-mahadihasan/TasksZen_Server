@@ -91,10 +91,16 @@ app.post("/users", async (req, res) => {
 // Get all tasks
 app.get("/tasks/:email", verifyToken, async (req, res) => {
   const email = req.params.email
-  const search = req.query.search
-  console.log(search) 
+  const search = req.query.search ? String(req.query.search).trim() : "";
+  const query = {   
+    title: {
+        $regex: search,
+        $options: "i",
+    },
+    userEmail: email
+  }
   try {
-    const tasks = await Task.find({userEmail: email})
+    const tasks = await Task.find(query)
     res.json(tasks)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -179,7 +185,7 @@ app.delete("/tasks/:id", verifyToken, async (req, res) => {
 
 
 // Get activities
-app.get("/activities/:email", async (req, res) => {
+app.get("/activities/:email", verifyToken, async (req, res) => {
   const email = req.params.email
   try {
     const activities = await Activity.find({userEmail: email}).sort("-timestamp").limit(50)
@@ -190,7 +196,7 @@ app.get("/activities/:email", async (req, res) => {
 })
 
 // Log activity
-app.post("/activities", async (req, res) => {
+app.post("/activities", verifyToken, async (req, res) => {
   const { title, userEmail } = req.body
   try {
     const newActivity = await new Activity({ title, userEmail }).save()
