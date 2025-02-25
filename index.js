@@ -23,6 +23,7 @@ const taskSchema = new mongoose.Schema({
   priorityLevel: { type: String, enum: ["High", "Medium", "Low"], required: true },
   name: { type: String, required: true },
   userEmail: { type: String, required: true },
+  order: { type: Number, required: true },
 })
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -91,7 +92,7 @@ app.post("/users", async (req, res) => {
 // Get all tasks
 app.get("/tasks/:email", verifyToken, async (req, res) => {
   const email = req.params.email
-  const search = req.query.search ? String(req.query.search).trim() : "";
+  const search = req.query.search ? String(req.query.search).sort({ category: 1, order: 1 }).trim() : "";
   const query = {   
     title: {
         $regex: search,
@@ -109,14 +110,19 @@ app.get("/tasks/:email", verifyToken, async (req, res) => {
 
 // Create a new task
 app.post("/tasks", verifyToken, async (req, res) => {
+  const { title, description, category, deadline, priorityLevel, name, userEmail } = req.body
+  const maxOrderTask = await Task.findOne({ category }).sort("-order")
+  const order = maxOrderTask ? maxOrderTask.order + 1 : 0
+  console.log(order)
   const task = new Task({
-    title: req.body.title,
-    description: req.body.description,
-    category: req.body.category,
-    deadline: req.body.deadline,
-    priorityLevel: req.body.priorityLevel,
-    name: req.body.name,
-    userEmail: req.body.userEmail,
+    title,
+    description,
+    category,
+    deadline,
+    priorityLevel,
+    name,
+    userEmail,
+    order,
   })
   console.log(task)
   try {
@@ -145,6 +151,7 @@ app.put("/tasks/:id", verifyToken, async (req, res) => {
         category: req.body.category,
         deadline: req.body.deadline,
         priorityLevel: req.body.priorityLevel,
+        order: req.body.order
       },
       { new: true },
     )
@@ -184,6 +191,77 @@ app.delete("/tasks/:id", verifyToken, async (req, res) => {
 })
 
 
+// Reorder tasks
+app.post("/tasks/reorder", async (req, res) => {
+  const { tasks, category, userEmail } = req.body
+
+  try {
+    const session = await mongoose.startSession()
+    await session.withTransaction(async () => {
+      // Update each task's order and category
+      for (const task of tasks) {
+        await Task.findByIdAndUpdate(task._id, { order: task.order, category: task.category }, { new: true, session })
+      }
+    })
+
+    await session.endSession()
+
+    // Log the activity
+    await new Activity({
+      title: `Tasks were reordered${category ? ` in ${category}` : ""}`,
+      userEmail,
+    }).save()
+
+    // Return updated tasks for all categories
+    const updatedTasks = await Task.find().sort({ category: 1, order: 1 })
+    res.json(updatedTasks)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
+
+// Move a task
+app.put("/tasks/:id/move", async (req, res) => {
+  try {
+    const { newCategory, userEmail } = req.body
+    const task = await Task.findById(req.params.id)
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" })
+    }
+
+    const oldCategory = task.category
+
+    // Get all tasks in the new category to update their orders
+    const tasksInNewCategory = await Task.find({ category: newCategory })
+
+    // Update orders of existing tasks in the new category
+    await Task.updateMany(
+      {
+        category: newCategory,
+        order: { $gte: tasksInNewCategory.length },
+      },
+      { $inc: { order: 1 } },
+    )
+
+    // Update the moved task
+    task.category = newCategory
+    task.order = tasksInNewCategory.length // Place it at the end of the new category
+    await task.save()
+
+    // Log the activity
+    await new Activity({
+      title: `Task '${task.title}' was moved from ${oldCategory} to ${newCategory}`,
+      userEmail,
+    }).save()
+
+    // Return updated tasks for all categories
+    const updatedTasks = await Task.find().sort({ category: 1, order: 1 })
+    res.json(updatedTasks)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
 // Get activities
 app.get("/activities/:email", verifyToken, async (req, res) => {
   const email = req.params.email
